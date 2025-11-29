@@ -9,20 +9,34 @@ use std::fs::{remove_file, File};
 use std::io::Write;
 use std::path::PathBuf;
 
+fn is_wasm_target() -> bool {
+    env::var("TARGET").unwrap_or_default().starts_with("wasm32")
+}
+
 fn add_def(v: &mut Vec<(String, String)>, key: &str, val: &str) {
     v.push((key.to_owned(), val.to_owned()));
 }
 
 fn main() {
     let mut defines = Vec::new();
-    for i in &[
-        "size_t",
-        "unsigned int",
-        "unsigned long",
-        "unsigned long long",
-    ] {
-        let def_name = format!("SIZEOF_{}", i.to_uppercase().replace(" ", "_"));
-        defines.push((def_name, check_native_size(i)));
+
+    // For WASM, use hardcoded sizes; for native, detect them
+    if is_wasm_target() {
+        // WASM32 uses 32-bit pointers and standard C types
+        add_def(&mut defines, "SIZEOF_SIZE_T", "4");
+        add_def(&mut defines, "SIZEOF_UNSIGNED_INT", "4");
+        add_def(&mut defines, "SIZEOF_UNSIGNED_LONG", "4");
+        add_def(&mut defines, "SIZEOF_UNSIGNED_LONG_LONG", "8");
+    } else {
+        for i in &[
+            "size_t",
+            "unsigned int",
+            "unsigned long",
+            "unsigned long long",
+        ] {
+            let def_name = format!("SIZEOF_{}", i.to_uppercase().replace(" ", "_"));
+            defines.push((def_name, check_native_size(i)));
+        }
     }
     add_def(&mut defines, "SECONDARY_DJW", "1");
     add_def(&mut defines, "SECONDARY_FGK", "1");
@@ -44,6 +58,11 @@ fn main() {
         builder.include("xdelta3/xdelta3");
         for (key, val) in &defines {
             builder.define(&key, Some(val.as_str()));
+        }
+
+        // For WASM, we need to disable certain features that aren't supported
+        if is_wasm_target() {
+            builder.flag("-Wno-unused-parameter");
         }
 
         builder
