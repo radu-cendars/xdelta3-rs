@@ -11,9 +11,14 @@
 //! You can find out how to use this crate in this documentation and you can also consult the tests in the `test/` folder
 //! to see it in action (how to generate and patch two files!)
 
+#[cfg(not(target_arch = "wasm32"))]
 extern crate libc;
 
+#[cfg(not(target_arch = "wasm32"))]
 use libc::c_uint;
+
+#[cfg(target_arch = "wasm32")]
+use std::os::raw::c_uint;
 
 #[cfg(feature = "stream")]
 pub mod stream;

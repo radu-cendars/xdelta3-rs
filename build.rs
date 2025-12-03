@@ -42,9 +42,16 @@ fn main() {
     add_def(&mut defines, "SECONDARY_FGK", "1");
     add_def(&mut defines, "EXTERNAL_COMPRESSION", "0");
     add_def(&mut defines, "XD3_USE_LARGEFILE64", "1");
+    add_def(&mut defines, "NOT_MAIN", "1");
+    add_def(&mut defines, "XD3_MAIN", "1");
 
-    #[cfg(windows)]
-    add_def(&mut defines, "XD3_WIN32", "1");
+    // Only define XD3_WIN32 for Windows native builds, not for WASM
+    // Check TARGET at runtime, not compile time
+    let target = env::var("TARGET").unwrap_or_default();
+    let is_wasm = is_wasm_target();
+    if target.contains("windows") && !is_wasm {
+        add_def(&mut defines, "XD3_WIN32", "1");
+    }
     add_def(&mut defines, "SHELL_TESTS", "0");
 
     #[cfg(feature = "lzma")]
@@ -72,25 +79,34 @@ fn main() {
     }
 
     {
-        let mut builder = bindgen::Builder::default();
-
-        for (key, val) in &defines {
-            builder = builder.clang_arg(format!("-D{}={}", key, val));
-        }
-        let bindings = builder
-            .header("xdelta3/xdelta3/xdelta3.h")
-            .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-            .allowlist_function("xd3_.*")
-            .allowlist_type("xd3_.*")
-            .rustified_enum("xd3_.*")
-            .generate()
-            .expect("Unable to generate bindings");
-
-        // Write the bindings to the $OUT_DIR/bindings.rs file.
         let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
-        bindings
-            .write_to_file(out_path.join("bindings.rs"))
-            .expect("Couldn't write bindings!");
+
+        // For WASM, use pregenerated bindings without size checks since bindgen has issues with Emscripten headers
+        if is_wasm_target() {
+            let pregenerated = include_str!("bindings_wasm32.rs");
+            std::fs::write(out_path.join("bindings.rs"), pregenerated)
+                .expect("Couldn't write pregenerated bindings!");
+        } else {
+            // For native targets, generate bindings normally
+            let mut builder = bindgen::Builder::default();
+
+            for (key, val) in &defines {
+                builder = builder.clang_arg(format!("-D{}={}", key, val));
+            }
+
+            let bindings = builder
+                .header("xdelta3/xdelta3/xdelta3.h")
+                .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+                .allowlist_function("xd3_.*")
+                .allowlist_type("xd3_.*")
+                .rustified_enum("xd3_.*")
+                .generate()
+                .expect("Unable to generate bindings");
+
+            bindings
+                .write_to_file(out_path.join("bindings.rs"))
+                .expect("Couldn't write bindings!");
+        }
     }
 }
 
